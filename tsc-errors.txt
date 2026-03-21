@@ -1,0 +1,11 @@
+﻿src/components/AnimatedBackground.tsx(33,45): error TS2339: Property 'bg' does not exist on type 'ThemeColors'.
+src/components/AnimatedBackground.tsx(61,13): error TS2304: Cannot find name 'initBody'.
+src/components/AnimatedBackground.tsx(65,13): error TS2304: Cannot find name 'drawBody'.
+src/components/AnimatedBackground.tsx(96,51): error TS2339: Property 'bg' does not exist on type 'ThemeColors'.
+src/components/ui/SkeletonLoader.tsx(25,9): error TS2322: Type '{ width: string | number; height: string | number; borderRadius: number; backgroundColor: string; opacity: Animated.Value; }' is not assignable to type 'false | "" | Value | WithAnimatedObject<ViewStyle> | AnimatedInterpolation<string | number> | WithAnimatedArray<ViewStyle | Falsy | RecursiveArray<...> | readonly (ViewStyle | Falsy)[]> | readonly (false | ... 5 more ... | undefined)[] | null | undefined'.
+  Types of property 'width' are incompatible.
+    Type 'string | number' is not assignable to type 'number | "auto" | `${number}%` | Value | AnimatedInterpolation<string | number> | WithAnimatedObject<AnimatedNode> | null | undefined'.
+      Type 'string' is not assignable to type 'number | "auto" | `${number}%` | Value | AnimatedInterpolation<string | number> | WithAnimatedObject<AnimatedNode> | null | undefined'.
+src/screens/CollabHubScreen.tsx(8,63): error TS2339: Property 'bg' does not exist on type 'ThemeColors'.
+src/services/api.ts(204,41): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/services/firebaseConfig.ts(2,35): error TS2305: Module '"firebase/auth"' has no exported member 'getReactNativePersistence'.
