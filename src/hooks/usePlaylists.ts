@@ -24,13 +24,13 @@ export const usePlaylists = () => {
 
   const createPlaylist = async (name: string, languages: string[] = ['Tamil']) => {
     if (!auth.currentUser) return;
-    const { searchMusic } = await import('../services/api');
+    const { searchMusicDeep } = await import('../services/api');
     
     const langSuffix = languages.length > 0 ? ` ${languages[0]}` : '';
     let songsToStore: any[] = [];
     try {
-      const results = await searchMusic(`${name}${langSuffix} songs`);
-      songsToStore = results.slice(0, 50);
+      const results = await searchMusicDeep(`${name}${langSuffix} songs`, 100, languages);
+      songsToStore = results;
     } catch (e) {
       console.log('Failed to fetch songs for new playlist', e);
     }
@@ -55,15 +55,15 @@ export const usePlaylists = () => {
 
   const createSmartCollection = async (keyword: string, type: 'smart_album' | 'artist_collection', languages: string[] = ['Tamil']) => {
     if (!auth.currentUser) return;
-    const { searchMusic } = await import('../services/api');
+    const { searchMusicDeep } = await import('../services/api');
     
     // Construct search query: "keyword languages songs"
     const langSuffix = languages.length > 0 ? ` ${languages[0]}` : '';
     const searchString = `${keyword}${langSuffix} ${type === 'smart_album' ? 'songs' : 'movie songs'}`;
     
     try {
-      const results = await searchMusic(searchString);
-      const songsToStore = results.slice(0, 25);
+      const results = await searchMusicDeep(searchString, 100, languages);
+      const songsToStore = results;
       
       const colors = ['#e91e63', '#673ab7', '#ff5722', '#009688', '#f57f17', '#6200ea', '#2196f3'];
       const icons = type === 'smart_album' ? ['disc', 'musical-notes'] : ['person', 'headset'];

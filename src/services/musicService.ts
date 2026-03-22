@@ -31,6 +31,13 @@ class MusicPlayerServiceClass {
   private _sleepTimerWarning: any = null;
   private _sleepTimerEnd: number | null = null;
   private _isPlayerReady = false;
+  private _userLanguages: string[] = ['Tamil'];
+
+  setUserLanguages(langs: string[]) {
+    if (langs && langs.length > 0) {
+      this._userLanguages = langs;
+    }
+  }
 
   constructor() {
     this.initPlayer();
@@ -153,6 +160,32 @@ class MusicPlayerServiceClass {
     }
 
     await this.loadAndPlay(this._queue[this._currentIndex]);
+
+    // Auto-expand Up Next queue if it is short
+    if (this._queue.length < 50 && track) {
+      getRecommendedSongs(track, this._userLanguages, 100).then(recos => {
+        const existingIds = new Set(this._queue.map(s => s.id));
+        const freshRecos = recos.filter(s => !existingIds.has(s.id));
+        if (freshRecos.length > 0) {
+          this._queue = [...this._queue, ...freshRecos];
+          this._originalQueue = [...this._queue];
+          
+          const tpTracks = freshRecos.map(track => {
+            let url = (track as any).localPath || track.streamUrl || '';
+            if ((track as any).localPath && !url.startsWith('file://')) url = `file://${url}`;
+            return {
+              id: track.id,
+              url: url || 'dummy',
+              title: track.title,
+              artist: track.artist,
+              artwork: track.artworkUrl && track.artworkUrl.length > 10 ? track.artworkUrl : 'ic_launcher',
+            };
+          });
+          
+          TrackPlayer.add(tpTracks).then(() => this.notify());
+        }
+      }).catch(e => console.log('Queue expansion failed', e));
+    }
   }
 
   private async loadAndPlay(track: PlayerTrack) {

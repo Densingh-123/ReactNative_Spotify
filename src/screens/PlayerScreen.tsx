@@ -188,7 +188,6 @@ export default function PlayerScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity onPress={async () => {
-             // Force skip next to ensure it increments correctly
              await skipNext();
           }}>
             <Icon name="play-skip-forward" size={36} color={colors.text} />
@@ -227,7 +226,7 @@ export default function PlayerScreen() {
             <View>
               <Text style={[styles.contentTitle, { color: colors.textSecondary }]}>LYRICS</Text>
               {lyrics.length > 0 ? (
-                <ScrollView ref={lyricsScrollRef} style={{ height: 350 }} showsVerticalScrollIndicator={false}>
+                <View>
                   {lyrics.map((line, idx) => {
                     const isActive = idx === currentLyricIdx;
                     return (
@@ -240,7 +239,7 @@ export default function PlayerScreen() {
                     );
                   })}
                   <View style={{ height: 100 }} />
-                </ScrollView>
+                </View>
               ) : (
                 <View style={styles.emptyContent}>
                   <Text style={{ fontSize: 48 }}>🎵</Text>
@@ -254,7 +253,7 @@ export default function PlayerScreen() {
                 <Text style={[styles.contentTitle, { color: colors.textSecondary, marginBottom: 0 }]}>UP NEXT</Text>
                 <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '600' }}>{queue.length} Songs</Text>
               </View>
-              <ScrollView style={{ height: 350 }} showsVerticalScrollIndicator={false}>
+              <View>
                 {queue.map((song, idx) => {
                   const isCurrent = currentTrack.id === song.id;
                   return (
@@ -272,11 +271,11 @@ export default function PlayerScreen() {
                     </TouchableOpacity>
                   );
                 })}
-              </ScrollView>
+                <View style={{ height: 80 }} />
+              </View>
             </View>
           )}
         </View>
-
       </ScrollView>
 
       <SongOptionsMenu visible={showMenu} onClose={() => setShowMenu(false)} song={currentTrack} onAddToPlaylist={() => { setShowMenu(false); setPickerVisible(true); }} />
@@ -362,7 +361,7 @@ const styles = StyleSheet.create({
   tabContainer: { flexDirection: 'row', borderRadius: 16, padding: 4, marginBottom: 20 },
   tabBtn: { flex: 1, paddingVertical: 10, borderRadius: 12, alignItems: 'center' },
   tabText: { fontSize: 13, fontWeight: '700' },
-  contentBox: { borderRadius: 24, padding: 20, minHeight: 400 },
+  contentBox: { borderRadius: 24, padding: 20 },
   contentTitle: { fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 16 },
   lyricLine: { height: 45, justifyContent: 'center', alignItems: 'center' },
   lyricText: { textAlign: 'center' },

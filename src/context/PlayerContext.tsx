@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import MusicPlayerService, { PlayerTrack, PlayerState } from '../services/musicService';
 import { SongItem } from '../services/api';
+import { useAuth } from './AuthContext';
 
 interface PlayerContextType {
   currentTrack: PlayerTrack | null;
@@ -33,10 +34,17 @@ const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const [, forceUpdate] = useState(0);
+  const { preferences } = useAuth();
 
   useEffect(() => {
     return MusicPlayerService.subscribe(() => forceUpdate(n => n + 1));
   }, []);
+
+  useEffect(() => {
+    if (preferences?.languages) {
+      MusicPlayerService.setUserLanguages(preferences.languages);
+    }
+  }, [preferences?.languages]);
 
   const playTrack = useCallback(async (track: SongItem, queue?: SongItem[], index?: number) => {
     await MusicPlayerService.playTrack(track, queue, index);

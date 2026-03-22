@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, TextInput, Alert, Modal } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, TextInput, Alert, Modal, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useLikes } from '../hooks/useLikes';
@@ -24,7 +24,7 @@ export default function LibraryScreen() {
   const { preferences, user } = useAuth();
   const { blends, collabs } = useSocial();
   const [activeTab, setActiveTab] = useState<Tab>('Playlists');
-  
+
   const [modalType, setModalType] = useState<Tab | null>(null);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -54,13 +54,13 @@ export default function LibraryScreen() {
       { id: 'ringtones', name: 'Liked Ringtones', count: likedRingtones.length, color: colors.primary, image: 'https://images.unsplash.com/photo-1459749411177-04218006733b?w=400', isRingtone: true },
       ...playlistsByType('playlist').map(p => ({ id: p.id, name: p.name, count: p.songs?.length || 0, color: p.color, image: p.image || DEFAULT_IMAGE, isManageable: true })),
       ...collabs.map(p => ({ id: p.id, name: p.name, count: p.songs?.length || p.songIds?.length || 0, color: colors.primary, image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400', isCollab: true })),
-      ...blends.map(b => ({ id: b.id, name: b.name?.includes('Vibe') ? b.name : `Vibe with ${b.participants?.length ? 'Friend' : 'Friend'}`, count: b.songs?.length || b.songIds?.length || 0, color: '#9c27b0', image: 'https://images.unsplash.com/photo-1514525253344-f81f3f77ed96?w=400', isBlend: true, partnerId: b.participants?.find((p:any) => p !== user?.uid) }))
+      ...blends.map(b => ({ id: b.id, name: b.name?.includes('Vibe') ? b.name : `Vibe with ${b.participants?.length ? 'Friend' : 'Friend'}`, count: b.songs?.length || b.songIds?.length || 0, color: '#9c27b0', image: 'https://images.unsplash.com/photo-1514525253344-f81f3f77ed96?w=400', isBlend: true, partnerId: b.participants?.find((p: any) => p !== user?.uid) }))
     ];
   } else if (activeTab === 'Albums') {
     data = [
       ...playlistsByType('smart_album').map(p => ({ id: p.id, name: p.name, count: p.songs?.length || 0, color: p.color, image: p.image || DEFAULT_IMAGE, isManageable: true })),
       ...collabs.map(p => ({ id: p.id, name: p.name, count: p.songs?.length || p.songIds?.length || 0, color: colors.primary, image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400', isCollab: true })),
-      ...blends.map(b => ({ id: b.id, name: `Vibe with ${b.participants?.length ? 'Friend' : 'Friend'}`, count: b.songs?.length || b.songIds?.length || 0, color: '#9c27b0', image: 'https://images.unsplash.com/photo-1514525253344-f81f3f77ed96?w=400', isBlend: true, partnerId: b.participants?.find((p:any) => p !== user?.uid) }))
+      ...blends.map(b => ({ id: b.id, name: `Vibe with ${b.participants?.length ? 'Friend' : 'Friend'}`, count: b.songs?.length || b.songIds?.length || 0, color: '#9c27b0', image: 'https://images.unsplash.com/photo-1514525253344-f81f3f77ed96?w=400', isBlend: true, partnerId: b.participants?.find((p: any) => p !== user?.uid) }))
     ];
   } else {
     data = playlistsByType('artist_collection').map(p => ({ id: p.id, name: p.name, count: p.songs?.length || 0, color: p.color, image: p.image || DEFAULT_IMAGE, isManageable: true }));
@@ -104,8 +104,8 @@ export default function LibraryScreen() {
           if (tab === 'Artists') iconName = 'people';
 
           return (
-            <TouchableOpacity 
-              key={tab} 
+            <TouchableOpacity
+              key={tab}
               style={[styles.tabBtn, { backgroundColor: isActive ? colors.primary : colors.surface }]}
               onPress={() => setActiveTab(tab)}
             >
@@ -119,8 +119,8 @@ export default function LibraryScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.grid}>
           {data.map(item => (
-            <TouchableOpacity 
-              key={item.id} 
+            <TouchableOpacity
+              key={item.id}
               activeOpacity={0.8}
               style={styles.gridItem}
               onPress={() => handleItemPress(item)}
@@ -128,16 +128,16 @@ export default function LibraryScreen() {
               delayLongPress={300}
             >
               <Image source={{ uri: item.image }} style={StyleSheet.absoluteFillObject} />
-              <LinearGradient colors={['rgba(0,0,0,0.9)', 'rgba(0,0,0,0.2)', 'transparent']} start={{x: 0, y: 1}} end={{x: 0, y: 0}} style={styles.itemOverlay}>
+              <LinearGradient colors={['rgba(0,0,0,0.9)', 'rgba(0,0,0,0.2)', 'transparent']} start={{ x: 0, y: 1 }} end={{ x: 0, y: 0 }} style={styles.itemOverlay}>
                 <Text style={styles.itemName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.itemCount}>{item.count} tracks</Text>
-                
+
                 <View style={[styles.itemIconBox, { backgroundColor: item.color + '55' }]}>
-                  {item.isLiked ? <Icon name="heart" size={16} color={item.color} /> : 
-                   item.isCollab ? <Icon name="people" size={16} color="#fff" /> :
-                   item.isBlend ? <Icon name="disc" size={16} color="#fff" /> :
-                   activeTab === 'Artists' ? <Icon name="person" size={16} color={item.color} /> : 
-                   <Icon name="disc" size={16} color={item.color} />}
+                  {item.isLiked ? <Icon name="heart" size={16} color={item.color} /> :
+                    item.isCollab ? <Icon name="people" size={16} color="#fff" /> :
+                      item.isBlend ? <Icon name="disc" size={16} color="#fff" /> :
+                        activeTab === 'Artists' ? <Icon name="person" size={16} color={item.color} /> :
+                          <Icon name="disc" size={16} color={item.color} />}
                 </View>
 
                 {(item.isCollab || item.isBlend) && (
@@ -176,32 +176,44 @@ export default function LibraryScreen() {
               </TouchableOpacity>
             </View>
             <Text style={[styles.modalDesc, { color: colors.textSecondary }]}>
-              {modalType === 'Playlists' ? 'Give your playlist a name.' : `Type a name (e.g. "Love", "Vijay") and we'll find 25 tracks in your preferred languages.`}
+              {modalType === 'Playlists' ? 'Give your playlist a name.' : `Type a name (e.g. "Love", "Vijay") and we'll find 100 tracks in your preferred languages.`}
             </Text>
-            
-            <TextInput
-              style={[styles.input, { color: colors.text, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.03)' }]}
-              placeholder={modalType === 'Playlists' ? "Playlist name..." : "Keyword (e.g. Love, Hip Hop)"}
-              placeholderTextColor={colors.textSecondary}
-              value={newName}
-              onChangeText={setNewName}
-              autoFocus
-              editable={!creating}
-              onSubmitEditing={handleCreate}
-            />
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalType(null)}>
-                <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.createBtn, { backgroundColor: colors.primary, opacity: (!newName.trim() || creating) ? 0.5 : 1 }]} 
-                onPress={handleCreate}
-                disabled={creating || !newName.trim()}
-              >
-                <Text style={{ color: '#fff', fontWeight: 'bold' }}>{modalType === 'Playlists' ? 'Create' : 'Generate'}</Text>
-              </TouchableOpacity>
-            </View>
+            {creating ? (
+              <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: 12 }} />
+                <Text style={{ color: colors.text, fontWeight: 'bold' }}>
+                  {modalType === 'Playlists' ? 'Creating playlist...' : `Generating 100-song ${modalType === 'Albums' ? 'Album' : 'Artist'} collection...`}
+                </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 6 }}>This may take a few seconds.</Text>
+              </View>
+            ) : (
+              <TextInput
+                style={[styles.input, { color: colors.text, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.03)' }]}
+                placeholder={modalType === 'Playlists' ? "Playlist name..." : "Keyword (e.g. Love, Hip Hop)"}
+                placeholderTextColor={colors.textSecondary}
+                value={newName}
+                onChangeText={setNewName}
+                autoFocus
+                editable={!creating}
+                onSubmitEditing={handleCreate}
+              />
+            )}
+
+            {!creating && (
+              <View style={styles.modalActions}>
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalType(null)}>
+                  <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.createBtn, { backgroundColor: colors.primary, opacity: (!newName.trim() || creating) ? 0.5 : 1 }]}
+                  onPress={handleCreate}
+                  disabled={creating || !newName.trim()}
+                >
+                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>{modalType === 'Playlists' ? 'Create' : 'Generate'}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>
