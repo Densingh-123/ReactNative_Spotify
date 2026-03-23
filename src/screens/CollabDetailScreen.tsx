@@ -11,7 +11,7 @@ import { usePlayer } from '../context/PlayerContext';
 import { db } from '../services/firebaseConfig';
 import {
   doc, updateDoc, arrayUnion, collection, query,
-  onSnapshot, addDoc, orderBy, limit, getDocs, where, deleteDoc
+  onSnapshot, addDoc, orderBy, limit, getDocs, where, deleteDoc, increment
 } from 'firebase/firestore';
 import { SongItem, getRecommendedSongs, searchSongs } from '../services/api';
 import { triggerCollabNotification } from '../services/notificationService';
@@ -123,6 +123,7 @@ export default function CollabDetailScreen() {
         addedBy: user?.displayName || user?.email?.split('@')[0] || 'Anonymous',
         addedAt: new Date(),
       });
+      await updateDoc(doc(db, 'collab_playlists', id), { songCount: increment(1) });
       setRecommended(prev => prev.filter(s => s.id !== song.id));
       setSearchResults(prev => prev.filter(s => s.id !== song.id));
       setSearchQuery('');
@@ -146,6 +147,7 @@ export default function CollabDetailScreen() {
             setDeletingId(docId);
             try {
               await deleteDoc(doc(db, 'collab_playlists', id, 'songs', docId));
+              await updateDoc(doc(db, 'collab_playlists', id), { songCount: increment(-1) });
             } catch (e) {
               console.error('Failed to delete song', e);
             } finally {

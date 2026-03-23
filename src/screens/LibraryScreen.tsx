@@ -53,14 +53,14 @@ export default function LibraryScreen() {
       { id: 'liked', name: 'Liked Songs', count: likedSongs.length, color: '#e91e63', image: 'https://images.unsplash.com/photo-1516280440614-37939bbacd81?w=400', isLiked: true },
       { id: 'ringtones', name: 'Liked Ringtones', count: likedRingtones.length, color: colors.primary, image: 'https://images.unsplash.com/photo-1459749411177-04218006733b?w=400', isRingtone: true },
       ...playlistsByType('playlist').map(p => ({ id: p.id, name: p.name, count: p.songs?.length || 0, color: p.color, image: p.image || DEFAULT_IMAGE, isManageable: true })),
-      ...collabs.map(p => ({ id: p.id, name: p.name, count: p.songs?.length || p.songIds?.length || 0, color: colors.primary, image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400', isCollab: true })),
-      ...blends.map(b => ({ id: b.id, name: b.name?.includes('Vibe') ? b.name : `Vibe with ${b.participants?.length ? 'Friend' : 'Friend'}`, count: b.songs?.length || b.songIds?.length || 0, color: '#9c27b0', image: 'https://images.unsplash.com/photo-1514525253344-f81f3f77ed96?w=400', isBlend: true, partnerId: b.participants?.find((p: any) => p !== user?.uid) }))
+      ...collabs.map(p => ({ id: p.id, name: p.name, count: p.songCount || 0, color: colors.primary, image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400', isCollab: true })),
+      ...blends.map(b => ({ id: b.id, name: b.name?.includes('Vibe') ? b.name : `Vibe with ${b.participants?.length ? 'Friend' : 'Friend'}`, count: b.songCount || 0, color: '#9c27b0', image: 'https://images.unsplash.com/photo-1514525253344-f81f3f77ed96?w=400', isBlend: true, partnerId: b.participants?.find((p: any) => p !== user?.uid) }))
     ];
   } else if (activeTab === 'Albums') {
     data = [
       ...playlistsByType('smart_album').map(p => ({ id: p.id, name: p.name, count: p.songs?.length || 0, color: p.color, image: p.image || DEFAULT_IMAGE, isManageable: true })),
-      ...collabs.map(p => ({ id: p.id, name: p.name, count: p.songs?.length || p.songIds?.length || 0, color: colors.primary, image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400', isCollab: true })),
-      ...blends.map(b => ({ id: b.id, name: `Vibe with ${b.participants?.length ? 'Friend' : 'Friend'}`, count: b.songs?.length || b.songIds?.length || 0, color: '#9c27b0', image: 'https://images.unsplash.com/photo-1514525253344-f81f3f77ed96?w=400', isBlend: true, partnerId: b.participants?.find((p: any) => p !== user?.uid) }))
+      ...collabs.map(p => ({ id: p.id, name: p.name, count: p.songCount || 0, color: colors.primary, image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400', isCollab: true })),
+      ...blends.map(b => ({ id: b.id, name: `Vibe with ${b.participants?.length ? 'Friend' : 'Friend'}`, count: b.songCount || 0, color: '#9c27b0', image: 'https://images.unsplash.com/photo-1514525253344-f81f3f77ed96?w=400', isBlend: true, partnerId: b.participants?.find((p: any) => p !== user?.uid) }))
     ];
   } else {
     data = playlistsByType('artist_collection').map(p => ({ id: p.id, name: p.name, count: p.songs?.length || 0, color: p.color, image: p.image || DEFAULT_IMAGE, isManageable: true }));

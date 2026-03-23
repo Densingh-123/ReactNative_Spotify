@@ -5,6 +5,7 @@ import { SongItem } from '../services/api';
 
 export const useRecentlyPlayed = (limitCount = 10) => {
   const [recentlyPlayed, setRecentlyPlayed] = useState<SongItem[]>([]);
+  const [ringtoneHistory, setRingtoneHistory] = useState<SongItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -22,22 +23,25 @@ export const useRecentlyPlayed = (limitCount = 10) => {
             artist: data.artist,
             artworkUrl: data.artworkUrl,
             streamUrl: data.streamUrl,
+            duration: data.duration || 0,
             playedAt: data.playedAt?.toDate?.() || new Date(0) // Handle firestore timestamp
           } as any;
         });
 
-        // Sort by playedAt desc and limit locally
-        const sorted = songs
-          .sort((a: any, b: any) => b.playedAt - a.playedAt)
-          .slice(0, limitCount)
-          .map(({ playedAt, ...s }: any) => s as SongItem);
+        // Sort by playedAt desc
+        const sorted = songs.sort((a: any, b: any) => b.playedAt - a.playedAt);
+        const mapped = sorted.map(({ playedAt, ...s }: any) => s as SongItem);
+        
+        const fullSongs = mapped.filter(s => !s.duration || s.duration >= 180).slice(0, limitCount);
+        const ringtones = mapped.filter(s => s.duration && s.duration > 0 && s.duration < 180).slice(0, limitCount);
 
-        setRecentlyPlayed(sorted);
+        setRecentlyPlayed(fullSongs);
+        setRingtoneHistory(ringtones);
         setLoading(false);
       }, () => setLoading(false));
     });
     return () => { unsubAuth(); if (unsubSnap) unsubSnap(); };
   }, [limitCount]);
 
-  return { recentlyPlayed, loading };
+  return { recentlyPlayed, ringtoneHistory, loading };
 };

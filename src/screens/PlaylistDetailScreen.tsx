@@ -30,9 +30,12 @@ export default function PlaylistDetailScreen() {
   const firestorePlaylist = playlists.find(p => p.id === playlistId);
   const { data, isLoading } = useSearchMusic(firestorePlaylist ? '' : playlistQuery);
 
-  const songs: SongItem[] = firestorePlaylist?.songs?.length
+  const rawSongs: SongItem[] = firestorePlaylist?.songs?.length
     ? firestorePlaylist.songs
     : data?.pages.flatMap(p => p) || [];
+    
+  // Ensure all songs in the playlist or smart collection are strictly unique by ID
+  const songs = Array.from(new Map(rawSongs.map(s => [s.id, s])).values());
 
   const [selectedSong, setSelectedSong] = useState<SongItem | null>(null);
   const [optionsVisible, setOptionsVisible] = useState(false);

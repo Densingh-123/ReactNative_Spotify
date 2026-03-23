@@ -19,6 +19,7 @@ export const navigationRef = createNavigationContainerRef();
 
 function AppContent() {
   const { colors } = useTheme();
+  const [currentRoute, setCurrentRoute] = React.useState<string | undefined>(undefined);
 
   React.useEffect(() => {
     setupNotifications().catch(console.error);
@@ -38,9 +39,14 @@ function AppContent() {
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <AnimatedBackground />
       <SafeAreaProvider style={{ flex: 1, backgroundColor: 'transparent' }}>
-        <NavigationContainer theme={navTheme} ref={navigationRef}>
+        <NavigationContainer 
+          theme={navTheme} 
+          ref={navigationRef}
+          onReady={() => setCurrentRoute(navigationRef.getCurrentRoute()?.name)}
+          onStateChange={() => setCurrentRoute(navigationRef.getCurrentRoute()?.name)}
+        >
           <MainNavigator />
-          <MiniPlayer />
+          {currentRoute !== 'RingtoneEdit' && <MiniPlayer />}
         </NavigationContainer>
       </SafeAreaProvider>
     </>

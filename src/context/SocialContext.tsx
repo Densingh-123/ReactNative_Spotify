@@ -14,8 +14,8 @@ export interface SocialItem {
   members: string[];
   participants?: string[];
   songIds: string[];            // kept for back-compat
-  songs?: SongItem[];           // resolved array from songsMap
   songsMap?: Record<string, SongItem>; // keyed by songId – the source of truth
+  songCount?: number;
   similarity?: number;
   description?: string;
   createdAt: any;

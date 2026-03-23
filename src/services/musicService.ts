@@ -52,7 +52,7 @@ class MusicPlayerServiceClass {
       this._isPlayerReady = true;
 
       await TrackPlayer.updateOptions({
-        progressUpdateEventInterval: 1, // Fix: ensures PlaybackProgressUpdated fires every second
+        progressUpdateEventInterval: 1,
         capabilities: [
           Capability.Play,
           Capability.Pause,
@@ -65,9 +65,13 @@ class MusicPlayerServiceClass {
           Capability.Play,
           Capability.Pause,
           Capability.SkipToNext,
+          Capability.SkipToPrevious,
+          Capability.SeekTo,
         ],
+        color: 4293685353, // 0xffec4899
         android: {
           appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
+          alwaysPauseOnInterruption: true,
         }
       });
 
@@ -245,16 +249,27 @@ class MusicPlayerServiceClass {
   async play() {
     if (!this._isPlayerReady) await this.initPlayer();
     await TrackPlayer.play();
+    this._state = 'playing';
+    this.notify();
   }
 
   async pause() {
     await TrackPlayer.pause();
+    this._state = 'paused';
+    this.notify();
   }
 
   async togglePlay() {
     const state = await TrackPlayer.getPlaybackState();
-    if (state.state === TPState.Playing) await this.pause();
-    else await this.play();
+    // Support both RNTP v3 (state.state) and RNTP v4 (state)
+    const activeState = (state as any).state !== undefined ? (state as any).state : state;
+    const isPlaying = activeState === TPState.Playing;
+    
+    if (isPlaying) {
+      await this.pause();
+    } else {
+      await this.play();
+    }
   }
 
   async seekTo(seconds: number) {
@@ -381,6 +396,7 @@ class MusicPlayerServiceClass {
         artist: track.artist,
         artworkUrl: track.artworkUrl,
         streamUrl: track.streamUrl || '',
+        duration: track.duration || 0,
         playedAt: serverTimestamp(),
       }, { merge: true });
     } catch (e) {

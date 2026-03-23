@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { SongItem } from '../../services/api';
@@ -14,7 +14,7 @@ interface Props {
   height?: number;
 }
 
-export default function SongCard({ item, onPress, onMorePress, isPlaying, width = 150, height = 200 }: Props) {
+function SongCard({ item, onPress, onMorePress, isPlaying, width = 150, height = 200 }: Props) {
   const { colors } = useTheme();
 
   return (
@@ -55,6 +55,10 @@ export default function SongCard({ item, onPress, onMorePress, isPlaying, width 
     </TouchableOpacity>
   );
 }
+
+export default memo(SongCard, (prev, next) => {
+  return prev.item.id === next.item.id && prev.isPlaying === next.isPlaying;
+});
 
 const styles = StyleSheet.create({
   card: {

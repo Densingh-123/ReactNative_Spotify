@@ -18,6 +18,17 @@ export default function RingtoneEditScreen() {
   const [lyrics, setLyrics] = useState<LyricsData | null>(null);
   const [loadingLyrics, setLoadingLyrics] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [tick, setTick] = useState(Date.now());
+
+  useEffect(() => {
+    let frameId: number;
+    const loop = () => {
+      if (isPlaying) setTick(Date.now());
+      frameId = requestAnimationFrame(loop);
+    };
+    if (isPlaying) loop();
+    return () => cancelAnimationFrame(frameId);
+  }, [isPlaying]);
 
   useEffect(() => {
     if (song && (!currentTrack || currentTrack.id !== song.id)) {
@@ -137,7 +148,7 @@ export default function RingtoneEditScreen() {
                  const barPos = i / 40;
                  const isPlayed = barPos <= (position / (duration || 1));
                  const baseHeight = 30 + (Math.sin(i * 0.5) * 20 + 20);
-                 const activeHeight = isPlaying ? baseHeight + (Math.sin(Date.now() / 200 + i) * 15) : baseHeight;
+                 const activeHeight = isPlaying ? baseHeight + (Math.sin(tick / 200 + i) * 15) : baseHeight;
                  
                  return (
                    <View key={i} style={[
@@ -269,8 +280,8 @@ const styles = StyleSheet.create({
   trimmerTitleBox: { flexDirection: 'row', alignItems: 'center' },
   cutIconBox: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   trimmerTitleText: { fontWeight: '800', fontSize: 14 },
-  timeStats: { flexDirection: 'row', alignItems: 'center' },
-  timePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, marginLeft: 8 },
+  timeStats: { flexDirection: 'column', alignItems: 'flex-end', gap: 6 },
+  timePill: { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
   timeText: { fontSize: 12 },
   waveformBox: { height: 100, backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 20, overflow: 'hidden', borderWidth: 1 },
   barsContainer: { flexDirection: 'row', alignItems: 'flex-end', height: '100%', paddingHorizontal: 4, justifyContent: 'space-between' },

@@ -8,6 +8,7 @@ import PlayerScreen from '../screens/PlayerScreen';
 import PlaylistDetailScreen from '../screens/PlaylistDetailScreen';
 import LikedSongsScreen from '../screens/LikedSongsScreen';
 import RecentlyPlayedScreen from '../screens/RecentlyPlayedScreen';
+import RingtoneHistoryScreen from '../screens/RingtoneHistoryScreen';
 import StatsScreen from '../screens/StatsScreen';
 import RingtonesScreen from '../screens/RingtonesScreen';
 import RingtoneEditScreen from '../screens/RingtoneEditScreen';
@@ -20,6 +21,7 @@ import ArtistScreen from '../screens/ArtistScreen';
 import DownloadsScreen from '../screens/DownloadsScreen';
 import PlaylistManagementScreen from '../screens/PlaylistManagementScreen';
 import GenreDetailScreen from '../screens/GenreDetailScreen';
+import AudioQualityScreen from '../screens/AudioQualityScreen';
 import { useAuth } from '../context/AuthContext';
 import CinematicLoader from '../components/ui/CinematicLoader';
 
@@ -46,6 +48,7 @@ export default function MainNavigator() {
           <Stack.Screen name="RecentlyPlayed" component={RecentlyPlayedScreen} />
           <Stack.Screen name="Stats" component={StatsScreen} />
           <Stack.Screen name="Ringtones" component={RingtonesScreen} />
+          <Stack.Screen name="RingtoneHistory" component={RingtoneHistoryScreen} />
           <Stack.Screen name="RingtoneEdit" component={RingtoneEditScreen} />
           <Stack.Screen name="Themes" component={ThemesScreen} />
           <Stack.Screen name="SupportChat" component={SupportChatScreen} />
@@ -56,6 +59,7 @@ export default function MainNavigator() {
           <Stack.Screen name="Downloads" component={DownloadsScreen} />
           <Stack.Screen name="PlaylistManagement" component={PlaylistManagementScreen} />
           <Stack.Screen name="GenreDetail" component={GenreDetailScreen} />
+          <Stack.Screen name="AudioQuality" component={AudioQualityScreen} />
         </>
       )}
     </Stack.Navigator>

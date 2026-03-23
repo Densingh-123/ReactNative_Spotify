@@ -42,13 +42,20 @@ export default function SearchScreen() {
   const { data: recommendations, isLoading: recoLoading } = useTrendingMusic(preferences?.languages);
 
   const results: SongItem[] = data?.pages.flatMap(p => p) || [];
-  const recommendedResults = recommendations || [];
+  // Deduplicate recommended results so no song appears twice
+  const recommendedResults = Array.from(
+    new Map((recommendations || []).map(s => [s.id, s])).values()
+  );
 
-  const handlePlay = async (track: SongItem) => {
+  const handlePlay = async (track: SongItem, list?: SongItem[]) => {
     if (!user) { navigation.navigate('Login'); return; }
     setPlayingId(track.id);
-    const idx = results.findIndex(s => s.id === track.id);
-    await playTrack(track, results, idx);
+    // Use provided list, otherwise fall back to recommendedResults for the recommended feed
+    const queue = list && list.length > 0 ? list : recommendedResults;
+    // Deduplicate by ID
+    const deduped = Array.from(new Map(queue.map(s => [s.id, s])).values());
+    const idx = deduped.findIndex(s => s.id === track.id);
+    await playTrack(track, deduped, Math.max(0, idx));
     navigation.navigate('Player');
     setPlayingId(null);
   };
@@ -94,7 +101,7 @@ export default function SearchScreen() {
                   key={`reco-${item.id}-${index}`}
                   activeOpacity={0.8}
                   style={styles.resultCard}
-                  onPress={() => handlePlay(item)}
+                  onPress={() => handlePlay(item, recommendedResults)}
                 >
                   <Image source={{ uri: item.artworkUrl }} style={StyleSheet.absoluteFillObject} />
                   <LinearGradient
@@ -134,7 +141,7 @@ export default function SearchScreen() {
                 key={`${item.id}-${index}`}
                 activeOpacity={0.8}
                 style={styles.resultCard}
-                onPress={() => handlePlay(item)}
+                onPress={() => handlePlay(item, results)}
               >
                 <Image source={{ uri: item.artworkUrl }} style={StyleSheet.absoluteFillObject} />
                 <LinearGradient

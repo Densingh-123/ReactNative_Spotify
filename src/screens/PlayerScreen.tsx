@@ -60,6 +60,30 @@ export default function PlayerScreen() {
   const lyricsScrollRef = useRef<ScrollView>(null);
   // Removed spin animation as per user request for a fixed box look
   const liked = currentTrack ? isLiked(currentTrack.id) : false;
+  // Animated Ripples
+  const waveAnims = useRef(Array.from({ length: 48 }).map(() => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    if (isPlaying) {
+      const animations = waveAnims.map((anim, i) => {
+        // pseudorandom fixed delays so it looks like a continuous audio wave pattern
+        const randomDelay = (i * 47) % 1200;
+        const randomDuration = 600 + ((i * 31) % 400);
+        
+        return Animated.loop(
+          Animated.sequence([
+            Animated.delay(randomDelay),
+            Animated.timing(anim, { toValue: 1, duration: randomDuration, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+            Animated.timing(anim, { toValue: 0, duration: randomDuration, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
+          ])
+        );
+      });
+      Animated.parallel(animations).start();
+    } else {
+      waveAnims.forEach(anim => { anim.stopAnimation(); anim.setValue(0); });
+    }
+  }, [isPlaying]);
+
   const displayPosition = isSeeking ? seekValue * (duration || 1) : position;
 
   // Fetch lyrics
@@ -84,7 +108,8 @@ export default function PlayerScreen() {
 
   useEffect(() => {
     if (currentLyricIdx !== -1 && lyricsScrollRef.current) {
-      lyricsScrollRef.current.scrollTo({ y: Math.max(0, currentLyricIdx * 45 - 100), animated: true });
+      // Each inactive line ~40px, active ~54px
+      lyricsScrollRef.current.scrollTo({ y: Math.max(0, currentLyricIdx * 40 - 80), animated: true });
     }
   }, [currentLyricIdx]);
 
@@ -122,12 +147,42 @@ export default function PlayerScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Album Art - Fixed Box Style */}
-        <View style={styles.artContainer}>
-          <View style={[styles.albumArt, { borderColor: colors.surfaceHighlight }]}>
+        {/* Album Art - Concentric Ripples */}
+        <View style={[styles.artContainer, { marginTop: 20, position: 'relative', height: width * 0.7, justifyContent: 'center', alignItems: 'center' }]}>
+          {waveAnims.map((anim, i) => (
+            <Animated.View
+              key={`wave-${i}`}
+              style={{
+                position: 'absolute',
+                width: 5,
+                height: 6,
+                backgroundColor: colors.primary,
+                borderRadius: 3,
+                transform: [
+                  { rotate: `${i * 7.5}deg` },
+                  { translateY: (width * 0.35) + 18 },
+                  { scaleY: anim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.5 + ((i % 4 === 0) ? 2.5 : 0)] }) }
+                ]
+              }}
+            />
+          ))}
+          <View style={{
+            width: width * 0.7,
+            height: width * 0.7,
+            borderRadius: width * 0.35,
+            padding: 10,
+            borderWidth: 3,
+            borderColor: colors.primary + '55',
+            backgroundColor: colors.surfaceHighlight,
+            elevation: isPlaying ? 20 : 0,
+            shadowColor: colors.primary,
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: isPlaying ? 0.6 : 0,
+            shadowRadius: 20,
+          }}>
             <Image 
               source={{ uri: currentTrack.artworkUrl || 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=400' }} 
-              style={styles.artImage} 
+              style={{ width: '100%', height: '100%', borderRadius: (width * 0.7 - 20) / 2, resizeMode: 'cover' }} 
             />
           </View>
         </View>
@@ -226,15 +281,31 @@ export default function PlayerScreen() {
             <View>
               <Text style={[styles.contentTitle, { color: colors.textSecondary }]}>LYRICS</Text>
               {lyrics.length > 0 ? (
-                <View>
+                <View style={{ paddingHorizontal: 4 }}>
                   {lyrics.map((line, idx) => {
                     const isActive = idx === currentLyricIdx;
                     return (
-                      <View key={idx} style={[styles.lyricLine, { transform: [{ scale: isActive ? 1.05 : 1 }], opacity: isActive ? 1 : 0.4 }]}>
-                        <Text style={[
-                          styles.lyricText,
-                          { color: isActive ? colors.primary : colors.textSecondary, fontWeight: isActive ? '800' : '400', fontSize: isActive ? 18 : 15 }
-                        ]}>{line.text}</Text>
+                      <View
+                        key={`lyr-${idx}`}
+                        style={[
+                          styles.lyricLine,
+                          isActive && styles.lyricLineActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.lyricText,
+                            {
+                              color: isActive ? colors.primary : colors.textSecondary,
+                              fontWeight: isActive ? '800' : '400',
+                              fontSize: isActive ? 17 : 14,
+                              opacity: isActive ? 1 : 0.45,
+                              transform: [{ scale: isActive ? 1.04 : 1 }],
+                            }
+                          ]}
+                        >
+                          {line.text}
+                        </Text>
                       </View>
                     );
                   })}
@@ -254,11 +325,12 @@ export default function PlayerScreen() {
                 <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '600' }}>{queue.length} Songs</Text>
               </View>
               <View>
-                {queue.map((song, idx) => {
+                {/* Deduplicate queue by ID before rendering */}
+                {Array.from(new Map(queue.map(s => [s.id, s])).values()).map((song, idx) => {
                   const isCurrent = currentTrack.id === song.id;
                   return (
                     <TouchableOpacity
-                      key={idx}
+                      key={`q-${song.id}-${idx}`}
                       style={[styles.queueItem, { backgroundColor: isCurrent ? colors.primary + '15' : 'transparent', borderColor: isCurrent ? colors.primary + '33' : 'transparent' }]}
                       onPress={() => jumpToQueueIndex(idx)}
                     >
@@ -363,8 +435,17 @@ const styles = StyleSheet.create({
   tabText: { fontSize: 13, fontWeight: '700' },
   contentBox: { borderRadius: 24, padding: 20 },
   contentTitle: { fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 16 },
-  lyricLine: { height: 45, justifyContent: 'center', alignItems: 'center' },
-  lyricText: { textAlign: 'center' },
+  lyricLine: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  lyricLineActive: {
+    paddingVertical: 14,
+    marginVertical: 4,
+  },
+  lyricText: { textAlign: 'center', lineHeight: 22, paddingHorizontal: 4 },
   emptyContent: { height: 300, justifyContent: 'center', alignItems: 'center', opacity: 0.4 },
   queueHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   queueItem: { flexDirection: 'row', alignItems: 'center', padding: 8, borderRadius: 12, marginBottom: 8 },

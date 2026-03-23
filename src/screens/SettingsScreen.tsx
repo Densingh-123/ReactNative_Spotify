@@ -58,8 +58,10 @@ export default function SettingsScreen() {
       title: 'Personalization',
       items: [
         { icon: 'color-palette', label: 'Themes', sub: '100 themes available', action: () => navigation.navigate('Themes') },
+        { icon: 'musical-notes', label: 'Ringtones', sub: 'Set your incoming call tune', action: () => navigation.navigate('Ringtones') },
+        { icon: 'time', label: 'Ringtones History', sub: 'Your custom rings', action: () => navigation.navigate('RingtoneHistory') },
         { icon: 'stats-chart', label: 'Listening Stats', sub: 'Time spent, top artists', action: () => navigation.navigate('Stats') },
-        { icon: 'musical-notes', label: 'Audio Quality', sub: 'High quality streaming', action: () => { } },
+        { icon: 'musical-notes', label: 'Audio Quality & EQ', sub: 'Streaming quality & equalizer', action: () => navigation.navigate('AudioQuality') },
       ]
     },
     {

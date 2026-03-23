@@ -1,10 +1,9 @@
 import CryptoJS from 'crypto-js';
-import { ENV } from './firebaseConfig';
 
 export const decodeSaavnUrl = (input: string): string => {
   if (!input) return '';
   try {
-    const key = CryptoJS.enc.Utf8.parse(ENV.VITE_SAAVN_DES_KEY || '38346591');
+    const key = CryptoJS.enc.Utf8.parse('38346591');
     const decrypted = CryptoJS.DES.decrypt(
       { ciphertext: CryptoJS.enc.Base64.parse(input) } as any,
       key,
@@ -31,12 +30,13 @@ export interface SongItem {
   streamUrl?: string;
   fullStreamUrl?: string;
   previewUrl?: string;
+  duration?: number; // in seconds
 }
 
-const CORS_PROXY = ENV.VITE_CORS_PROXY || 'https://api.codetabs.com/v1/proxy/?quest=';
-const PIPED_API_BASE = ENV.VITE_PIPED_API_BASE || 'https://pipedapi.kavin.rocks';
-const SAAVN_API_BASE = ENV.VITE_SAAVN_API_BASE || 'https://www.jiosaavn.com/api.php';
-const LRCLIB_API_BASE = ENV.VITE_LRCLIB_API_BASE || 'https://lrclib.net/api';
+const CORS_PROXY = 'https://api.codetabs.com/v1/proxy/?quest=';
+const PIPED_API_BASE = 'https://pipedapi.kavin.rocks';
+const SAAVN_API_BASE = 'https://www.jiosaavn.com/api.php';
+const LRCLIB_API_BASE = 'https://lrclib.net/api';
 
 const fetchViaProxy = (url: string) =>
   fetch(`${CORS_PROXY}${encodeURIComponent(url)}`);
@@ -128,14 +128,28 @@ const getHighResImage = (url: string) => {
   return url.replace('50x50', '500x500').replace('150x150', '500x500').replace('http:', 'https:');
 };
 
+const parseDuration = (raw: string | number | undefined): number => {
+  if (!raw) return 0;
+  if (typeof raw === 'number') return raw;
+  const parts = String(raw).split(':');
+  if (parts.length === 2) return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+  return parseInt(raw) || 0;
+};
+
 const mapTrack = (track: any): SongItem => ({
   id: track.id,
   title: unescapeHtml(track.title || track.song),
   artist: unescapeHtml(track.more_info?.music || track.subtitle || track.primary_artists || 'Unknown Artist'),
   artworkUrl: getHighResImage(track.image),
+  album: unescapeHtml(track.more_info?.album || track.album || ''),
   streamUrl: decodeSaavnUrl(track.more_info?.encrypted_media_url || track.encrypted_media_url || ''),
   previewUrl: track.more_info?.preview_url || track.media_preview_url || '',
+  duration: parseDuration(track.more_info?.duration || track.duration),
 });
+
+// Full songs: >= 3 minutes (180 seconds). Shorter songs are ringtone-suitable.
+const isFullSong = (s: SongItem) => !s.duration || s.duration >= 180;
+const isRingtoneSong = (s: SongItem) => s.duration && s.duration > 0 && s.duration < 180;
 
 const saavnFetch = async (url: string) => {
   const res = await fetchViaProxy(url);
@@ -146,82 +160,109 @@ const saavnFetch = async (url: string) => {
   return results;
 };
 
-export const fetchTrending = async (languages: string[] = ['Tamil', 'English']): Promise<SongItem[]> => {
+export const fetchTrending = async (languages: string[] = ['Tamil', 'English'], fullSongsOnly = true): Promise<SongItem[]> => {
   try {
     const langs = languages.length > 0 ? languages : ['Tamil'];
     const allResults: SongItem[] = [];
-    const keywords = ['hits', 'melody', 'new', 'trending', 'party', 'love', 'dance', 'top'];
+    const keywordSets = [
+      ['hits', 'top songs', 'new releases'],
+      ['love songs', 'romantic', 'melody'],
+      ['dance', 'party', 'energetic'],
+      ['trending', 'viral', 'popular'],
+      ['old hits', 'classic', 'evergreen'],
+    ];
     
-    // Fetch for each language to ensure variety
-    for (const lang of langs.slice(0, 5)) { // Limit to 5 langs to avoid too many requests
-      const randomKeyword = keywords[Math.floor(Math.random() * keywords.length)];
-      const queryStr = `${lang.toLowerCase()} ${randomKeyword}`;
-      const url = `${SAAVN_API_BASE}?p=1&q=${encodeURIComponent(queryStr)}&_format=json&_marker=0&ctx=wap6dot0&n=50&__call=search.getResults`;
-      try {
-        const results = await saavnFetch(url);
-        allResults.push(...results.map(mapTrack));
-      } catch (e) {
-        console.warn(`Failed to fetch trending for ${lang}`, e);
+    const flatKeywords = keywordSets.flat().sort(() => Math.random() - 0.5);
+    const fetchPromises: Promise<SongItem[]>[] = [];
+    
+    for (const lang of langs) {
+      for (const keyword of flatKeywords.slice(0, 8)) {
+        const queryStr = `${lang.toLowerCase()} ${keyword}`;
+        const url = `${SAAVN_API_BASE}?p=1&q=${encodeURIComponent(queryStr)}&_format=json&_marker=0&ctx=wap6dot0&n=50&__call=search.getResults`;
+        fetchPromises.push(saavnFetch(url).then(res => res.map(mapTrack)));
       }
     }
 
-    // Shuffle and deduplicate
-    const uniqueResults = Array.from(new Map(allResults.map(s => [s.id, s])).values());
-    const shuffled = uniqueResults.sort(() => Math.random() - 0.5);
+    const settled = await Promise.allSettled(fetchPromises);
+    for (const res of settled) {
+      if (res.status === 'fulfilled') {
+        const tracks = res.value;
+        allResults.push(...(fullSongsOnly ? tracks.filter(isFullSong) : tracks));
+      }
+    }
+
+    // Deduplicate mapping by ID
+    const unique = Array.from(new Map(allResults.map(s => [s.id, s])).values());
+    const shuffled = unique.sort(() => Math.random() - 0.5);
     
-    return shuffled.slice(0, 100); // Return up to 100 songs for deep feed
+    return shuffled.slice(0, 250);
   } catch (error) {
     console.error('Error fetching trending:', error);
     return [];
   }
 };
 
+export const fetchMoodSongs = async (mood: string, languages: string[] = ['Tamil', 'English']): Promise<SongItem[]> => {
+  const moodQueryMap: Record<string, string[]> = {
+    Podcasts: ['podcast talk', 'motivational speech', 'interview', 'story', 'talk show'],
+    Romance: ['love songs', 'romantic', 'melody', 'heartbreak', 'romantic hits', 'love mashup'],
+    Relax: ['lofi chill', 'calm instrumental', 'ambient', 'soothing', 'peaceful', 'relaxing'],
+    'Feel good': ['happy songs', 'upbeat feel good', 'positive vibes', 'cheerful', 'joy', 'feel good hits'],
+    Energise: ['energy boost', 'workout power', 'hype songs', 'energetic', 'fast beat', 'high energy'],
+    Commute: ['road trip songs', 'commute playlist', 'driving', 'travel', 'journey', 'car songs'],
+    Party: ['party hits', 'dance songs', 'club mix', 'dj remix', 'celebration', 'dance hits'],
+    'Work out': ['gym workout', 'fitness motivation', 'pump up', 'gym motivation', 'workout energetic', 'gym hits'],
+    Sad: ['sad songs', 'emotional', 'heartbreak', 'crying', 'painful', 'sad hits'],
+    Focus: ['study music', 'concentration focus', 'deep work', 'focus instrumental', 'study background'],
+    Sleep: ['sleep music', 'lullaby soothing', 'night relax', 'deep sleep', 'calm sleep', 'bedtime'],
+  };
+  
+  const queries = moodQueryMap[mood] || [mood.toLowerCase()];
+  const allResults: SongItem[] = [];
+  
+  // Strictly respect the user's preferred languages without appending unauthorized fallbacks
+  const safeLangs = languages && languages.length > 0 ? languages : ['Tamil'];
+  const fetchPromises: Promise<SongItem[]>[] = [];
+  
+  for (const lang of safeLangs) {
+    // Collect ~250 songs concurrently
+    for (const q of queries.slice(0, 10)) {
+      const url = `${SAAVN_API_BASE}?p=1&q=${encodeURIComponent(`${lang} ${q}`)}&_format=json&_marker=0&ctx=wap6dot0&n=50&__call=search.getResults`;
+      fetchPromises.push(saavnFetch(url).then(res => res.map(mapTrack).filter(isFullSong)));
+    }
+  }
+
+  const settled = await Promise.allSettled(fetchPromises);
+  for (const res of settled) {
+    if (res.status === 'fulfilled') {
+      allResults.push(...res.value);
+    }
+  }
+
+  // Final array unique by ID to prevent repeated tracks
+  const unique = Array.from(new Map(allResults.map(s => [s.id, s])).values());
+  
+  // If we collected more than 250, truncate. Otherwise shuffle the payload.
+  return unique.sort(() => Math.random() - 0.5).slice(0, 250);
+};
+
 export const searchMusic = async (query: string, offset = 0, languages?: string[]): Promise<SongItem[]> => {
   if (!query) return [];
   try {
     const langs = languages && languages.length > 0 ? languages : [];
-    
-    if (langs.length > 1) {
-      // Fetch a few from each language
-      const all: SongItem[] = [];
-      const numToFetch = Math.max(1, Math.floor(50 / langs.length));
-      
-      for (const lang of langs.slice(0, 3)) { // Max 3 for performance
-        const q = `${lang} ${query}`;
-        const url = `${SAAVN_API_BASE}?p=1&q=${encodeURIComponent(q)}&_format=json&_marker=0&ctx=wap6dot0&n=${numToFetch}&__call=search.getResults`;
-        try {
-          const res = await saavnFetch(url);
-          all.push(...res.map(mapTrack));
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      
-      // Fill up with general search if needed
-      if (all.length < 20) {
-          const res = await saavnFetch(`${SAAVN_API_BASE}?p=1&q=${encodeURIComponent(query)}&_format=json&_marker=0&ctx=wap6dot0&n=30&__call=search.getResults`);
-          all.push(...res.map(mapTrack));
-      }
-      
-      return all.filter((v, i, a) => a.findIndex(t => t.id === v.id) === i).slice(0, 50);
-    } else {
-      let finalQuery = query;
-      if (langs.length === 1) {
-        finalQuery = `${langs[0]} ${query}`;
-      }
-      const encodedQuery = encodeURIComponent(finalQuery);
-      const page = Math.floor(offset / 50) + 1;
-      const url = `${SAAVN_API_BASE}?p=${page}&q=${encodedQuery}&_format=json&_marker=0&ctx=wap6dot0&n=50&__call=search.getResults`;
-      const results = await saavnFetch(url);
-      return results.map(mapTrack);
-    }
+    const finalQuery = langs.length > 0 ? `${langs[0]} ${query}` : query;
+    const encodedQuery = encodeURIComponent(finalQuery);
+    const page = Math.floor(offset / 20) + 1;
+    const url = `${SAAVN_API_BASE}?p=${page}&q=${encodedQuery}&_format=json&_marker=0&ctx=wap6dot0&n=20&__call=search.getResults`;
+    const results = await saavnFetch(url);
+    return results.map(mapTrack);
   } catch (error) {
     console.error('Error searching music:', error);
     return [];
   }
 };
 
-export const searchMusicDeep = async (query: string, limit = 100, languages?: string[]): Promise<SongItem[]> => {
+export const searchMusicDeep = async (query: string, limit = 100, languages?: string[], fullSongsOnly = true): Promise<SongItem[]> => {
   try {
     const results: SongItem[] = [];
     const langs = languages && languages.length > 0 ? languages : ['Tamil', 'English', 'Hindi'];
@@ -237,7 +278,7 @@ export const searchMusicDeep = async (query: string, limit = 100, languages?: st
         try {
           const res = await saavnFetch(url);
           results.push(...res.map(mapTrack));
-          if (res.length < 10) break; // End of results for this query
+          if (res.length < 10) break;
         } catch { break; }
       }
       if (results.length >= limit) break;
@@ -252,13 +293,14 @@ export const searchMusicDeep = async (query: string, limit = 100, languages?: st
       } catch {}
     }
 
-    // 3. Fallback to trending to guarantee limit
+    // 3. Fallback to trending
     if (results.length < limit) {
-      const filler = await fetchTrending(langs);
+      const filler = await fetchTrending(langs, fullSongsOnly);
       results.push(...filler);
     }
     
-    const unique = Array.from(new Map(results.map(s => [s.id, s])).values());
+    let unique = Array.from(new Map(results.map(s => [s.id, s])).values());
+    if (fullSongsOnly) unique = unique.filter(isFullSong);
     return unique.slice(0, limit);
   } catch (error) {
     console.error('Error in searchMusicDeep:', error);
@@ -266,9 +308,7 @@ export const searchMusicDeep = async (query: string, limit = 100, languages?: st
   }
 };
 
-export const searchSongs = async (query: string, limit = 50, languages?: string[]): Promise<SongItem[]> => {
-  return searchMusic(query, 0, languages);
-};
+export const searchSongs = searchMusic;
 
 export const searchRingtones = async (query: string, languages: string[] = ['Tamil']): Promise<SongItem[]> => {
   try {
@@ -291,39 +331,71 @@ export const searchRingtones = async (query: string, languages: string[] = ['Tam
 
 export const fetchTrendingRingtones = async (languages: string[] = ['Tamil']): Promise<SongItem[]> => {
   try {
-    const lang = languages[0] || 'Tamil';
-    const query = encodeURIComponent(`${lang} instrumental hits`);
-    const url = `${SAAVN_API_BASE}?p=1&q=${query}&_format=json&_marker=0&ctx=wap6dot0&n=40&__call=search.getResults`;
-    const results = await saavnFetch(url);
-    // Filter for things that likely have previews or sound like ringtones
-    return results.map(mapTrack).filter((s: SongItem) => s.previewUrl || s.title.toLowerCase().includes('tone'));
+    const allResults: SongItem[] = [];
+    for (const lang of languages.slice(0, 3)) {
+      const queries = [`${lang} short songs`, `${lang} ringtone`, `${lang} hits`];
+      for (const q of queries) {
+        const url = `${SAAVN_API_BASE}?p=1&q=${encodeURIComponent(q)}&_format=json&_marker=0&ctx=wap6dot0&n=20&__call=search.getResults`;
+        try {
+          const results = await saavnFetch(url);
+          allResults.push(...results.map(mapTrack));
+        } catch {}
+      }
+    }
+    const unique = Array.from(new Map(allResults.map(s => [s.id, s])).values());
+    // Prefer short songs for ringtones, but include all if few short ones found
+    const shortSongs = unique.filter(isRingtoneSong);
+    return shortSongs.length >= 10 ? shortSongs.slice(0, 50) : unique.slice(0, 50);
   } catch (error) {
     console.error('Error fetching trending ringtones:', error);
     return [];
   }
 };
 
-export const getRecommendedSongs = async (track: SongItem, languages?: string[], limit = 100): Promise<SongItem[]> => {
+/**
+ * Smart recommendation engine similar to YouTube Music:
+ * Uses multiple signals: album, artist, genre keywords, and language preferences
+ * Returns only full songs (>= 3 minutes), deduped and shuffled.
+ */
+export const getRecommendedSongs = async (
+  track: SongItem,
+  languages?: string[],
+  limit = 100,
+  listenedIds: string[] = []
+): Promise<SongItem[]> => {
   try {
-    const query = track.album || track.artist;
-    // Use searchMusicDeep to get up to 'limit' songs related to the track's album or artist
-    const results = await searchMusicDeep(query, limit + 1, languages);
+    const allResults: SongItem[] = [];
+    const langs = languages && languages.length > 0 ? languages : ['Tamil', 'English'];
     
-    // Fallback 1: Artist Hits
-    if (results.length < limit / 2) {
-       const fallbackQuery = `${track.artist} hits`;
-       const fallbackResults = await searchMusicDeep(fallbackQuery, limit - results.length, languages);
-       results.push(...fallbackResults);
+    // Signal 1: Same album
+    if (track.album && track.album.length > 2) {
+      const albumSongs = await searchMusicDeep(track.album, 40, langs);
+      allResults.push(...albumSongs);
     }
     
-    // Fallback 2: General Trending to guarantee 100 songs
-    if (results.length < limit) {
-       const trendingFiller = await fetchTrending(languages);
-       results.push(...trendingFiller);
+    // Signal 2: Same artist
+    const artistSongs = await searchMusicDeep(track.artist, 40, langs);
+    allResults.push(...artistSongs);
+    
+    // Signal 3: Artist + hits (discover more)
+    const artistHits = await searchMusicDeep(`${track.artist} hits`, 30, langs);
+    allResults.push(...artistHits);
+    
+    // Signal 4: Fill with trending in user's preferred languages
+    if (allResults.length < limit) {
+      const trendingFiller = await fetchTrending(langs);
+      allResults.push(...trendingFiller);
     }
     
-    const unique = Array.from(new Map(results.map(s => [s.id, s])).values());
-    return unique.filter(s => s.id !== track.id).slice(0, limit);
+    // Deduplicate, exclude current track and already-listened songs
+    const excludedIds = new Set([track.id, ...listenedIds]);
+    const unique = Array.from(new Map(allResults.map(s => [s.id, s])).values())
+      .filter(s => !excludedIds.has(s.id))
+      .filter(isFullSong);
+    
+    // Shuffle for variety (like YTM)
+    const shuffled = unique.sort(() => Math.random() - 0.5);
+    return shuffled.slice(0, limit);
   } catch (error) {
     console.error('Error fetching recommendations:', error);
     return [];

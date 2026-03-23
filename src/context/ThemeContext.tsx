@@ -156,6 +156,25 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+const getContrastColor = (hex: string) => {
+  if (!hex) return '#ffffff';
+  if (hex.startsWith('rgba') || hex.startsWith('rgb')) {
+    const coords = hex.match(/\d+/g);
+    if (coords && coords.length >= 3) {
+      const r = parseInt(coords[0], 10), g = parseInt(coords[1], 10), b = parseInt(coords[2], 10);
+      const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+      return yiq >= 128 ? '#111111' : '#ffffff';
+    }
+    return '#ffffff';
+  }
+  let cleanedHex = hex.replace('#', '');
+  if (cleanedHex.length === 3) cleanedHex = cleanedHex.split('').map(c => c + c).join('');
+  if (cleanedHex.length !== 6) return '#ffffff';
+  const r = parseInt(cleanedHex.slice(0, 2), 16), g = parseInt(cleanedHex.slice(2, 4), 16), b = parseInt(cleanedHex.slice(4, 6), 16);
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return yiq >= 128 ? '#111111' : '#ffffff';
+};
+
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
   const [mode, setMode] = useState<ThemeMode>('black');
 
@@ -172,8 +191,17 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     await AsyncStorage.setItem('themeMode', newMode);
   };
 
+  const rawTheme = themes[mode] || themes['black'];
+  const contrastText = getContrastColor(rawTheme.background);
+  const computedTheme = {
+    ...rawTheme,
+    text: contrastText,
+    textSecondary: contrastText === '#111111' ? '#444444' : '#aaaaaa',
+    isDark: contrastText === '#ffffff'
+  };
+
   return (
-    <ThemeContext.Provider value={{ colors: themes[mode], currentMode: mode, setThemeMode }}>
+    <ThemeContext.Provider value={{ colors: computedTheme, currentMode: mode, setThemeMode }}>
       {children}
     </ThemeContext.Provider>
   );

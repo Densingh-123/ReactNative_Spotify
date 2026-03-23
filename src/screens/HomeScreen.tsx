@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, Modal } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Image, StyleSheet, Modal, ActivityIndicator, FlatList } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useTrendingMusic } from '../hooks/useMusicData';
 import { useRecentlyPlayed } from '../hooks/useRecentlyPlayed';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
-import { SongItem } from '../services/api';
+import { SongItem, fetchMoodSongs } from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 import SongCard from '../components/ui/SongCard';
 import SkeletonLoader from '../components/ui/SkeletonLoader';
@@ -18,19 +18,21 @@ import { getFestiveGreeting } from '../utils/festivals';
 import { getContrastColor } from '../utils/colors';
 import { triggerFestiveNotification } from '../services/notificationService';
 
-const GENRES = [
-  { label: 'Pop', color: '#FF6B6B', image: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300' },
-  { label: 'Chill', color: '#4ECDC4', image: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300' },
-  { label: 'Workout', color: '#45B7D1', image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=300' },
-  { label: 'Rock', color: '#96CEB4', image: 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=300' },
-  { label: 'Party', color: '#FFEEAD', image: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=300' },
-  { label: 'Melody', color: '#FFB7B2', image: 'https://images.unsplash.com/photo-1445985543470-41fba5c3144a?w=300' },
+// YouTube Music-style mood filter chips
+const MOOD_FILTERS = [
+  { label: 'All', icon: 'musical-notes' },
+  { label: 'Podcasts', icon: 'mic' },
+  { label: 'Romance', icon: 'heart' },
+  { label: 'Relax', icon: 'leaf' },
+  { label: 'Feel good', icon: 'happy' },
+  { label: 'Energise', icon: 'flash' },
+  { label: 'Commute', icon: 'car' },
+  { label: 'Party', icon: 'beer' },
+  { label: 'Work out', icon: 'barbell' },
+  { label: 'Sad', icon: 'rainy' },
+  { label: 'Focus', icon: 'bulb' },
+  { label: 'Sleep', icon: 'moon' },
 ];
-
-const GENRE_QUERIES: Record<string, string> = {
-  Pop: 'pop hits 2024', Chill: 'lofi chill beats', Workout: 'workout motivation',
-  Rock: 'classic rock anthems', Party: 'party dance hits', Melody: 'melody songs',
-};
 
 const LANGUAGES = [
   'English', 'Hindi', 'Tamil', 'Telugu', 'Kannada', 'Marathi', 'Bengali', 'Malayalam', 'Punjabi'
@@ -43,12 +45,19 @@ function getGreeting() {
   return 'Good evening';
 }
 
+/** Unique dedup by song ID */
+const uniqueSongs = (songs: SongItem[]) =>
+  Array.from(new Map(songs.map(s => [s.id, s])).values());
+
+// Global cache to preserve the user's selected Home tab across screen navigation/unmounts
+let globalActiveFilter = 'All';
+let globalFilteredSongs: SongItem[] = [];
+
 export default function HomeScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation<any>();
-  const { user, preferences, prefLoading, updateLanguages } = useAuth();
-  
-  // Strip numbers from email local part to get a clean name
+  const { user, preferences, updateLanguages } = useAuth();
+
   const rawName = user?.displayName || user?.email?.split('@')[0] || 'Friend';
   const cleanName = rawName.replace(/[0-9]/g, '') || 'Friend';
   const firstName = cleanName.split(' ')[0].charAt(0).toUpperCase() + cleanName.split(' ')[0].slice(1).toLowerCase();
@@ -56,44 +65,131 @@ export default function HomeScreen() {
   const greetingText = festiveGreeting ? festiveGreeting : `Hi ${firstName}, ${getGreeting()}`;
 
   useEffect(() => {
-    if (festiveGreeting) {
-      triggerFestiveNotification(festiveGreeting);
-    }
+    if (festiveGreeting) triggerFestiveNotification(festiveGreeting);
   }, [festiveGreeting]);
 
-  const { playTrack, currentTrack } = usePlayer();
-  const { data: trending, isLoading } = useTrendingMusic(preferences?.languages?.length ? preferences.languages : ['English', 'Tamil', 'Hindi']);
+  const { playTrack } = usePlayer();
+  const userLangs = preferences?.languages?.length ? preferences.languages : ['English', 'Tamil', 'Hindi'];
+  const { data: trending, isLoading } = useTrendingMusic(userLangs);
   const { recentlyPlayed } = useRecentlyPlayed(12);
-  
+
+  const [activeFilter, setActiveFilter] = useState(globalActiveFilter);
+  const [filteredSongs, setFilteredSongs] = useState<SongItem[]>(globalFilteredSongs);
+  const [filterLoading, setFilterLoading] = useState(false);
+
   const [selectedSong, setSelectedSong] = useState<SongItem | null>(null);
   const [optionsVisible, setOptionsVisible] = useState(false);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [langModalVisible, setLangModalVisible] = useState(false);
 
-  const featured = trending?.slice(0, 5) || [];
-  const topCharts = trending?.slice(5, 15) || [];
-  const topAlbums = trending?.slice(15, 25) || [];
-  
-  // Extract unique diverse artists from the entire 100-song randomized feed
-  const uniqueArtists = Array.from(new Map((trending || []).map(item => [item.artist, item])).values());
-  const topArtists = uniqueArtists.slice(0, 20);
-  
-  const trendingNow = trending?.slice(25, 60) || [];
+  // Handle mood filter chip selection
+  const handleFilterSelect = useCallback(async (filter: string) => {
+    setActiveFilter(filter);
+    globalActiveFilter = filter;
+    if (filter === 'All') {
+      setFilteredSongs([]);
+      globalFilteredSongs = [];
+      return;
+    }
+    setFilterLoading(true);
+    try {
+      const songs = await fetchMoodSongs(filter, userLangs);
+      const deduped = uniqueSongs(songs);
+      setFilteredSongs(deduped);
+      globalFilteredSongs = deduped;
+    } catch (e) {
+      console.warn('Failed to load mood songs', e);
+    } finally {
+      setFilterLoading(false);
+    }
+  }, [userLangs]);
 
-  const handlePlay = async (track: SongItem, list: SongItem[]) => {
+  // All songs from trending feed, deduplicated
+  const allTrending = uniqueSongs(trending || []);
+
+  // Derive YTM-style named sections from trending feed using safe modular slicing
+  const safeSlice = (arr: SongItem[], seed: number) => {
+    if (!arr.length) return [];
+    const offset = (seed * 17) % arr.length;
+    const result = [];
+    for(let i = 0; i < Math.min(25, arr.length); i++) {
+      result.push(arr[(offset + i) % arr.length]);
+    }
+    return result;
+  };
+
+  const featuredNow    = safeSlice(allTrending, 1);
+  const quickPicks     = safeSlice(allTrending, 2);
+  const freshFinds     = safeSlice(allTrending, 3);
+  const newReleases    = safeSlice(allTrending, 4);
+  const oldFavourites  = safeSlice(allTrending, 5);
+  const topCharts      = safeSlice(allTrending, 6);
+  const topAlbums      = safeSlice(allTrending, 7);
+  const trendingSongs  = allTrending; // User request: Show ALL songs in Trending Now
+  
+  const listenAgain    = uniqueSongs(recentlyPlayed).slice(0, 25);
+
+  // Extract unique artists
+  const topArtists = Array.from(
+    new Map(allTrending.map(item => [item.artist, item])).values()
+  ).slice(0, 25);
+
+  const handlePlay = async (track: SongItem, fallbackList: SongItem[]) => {
     if (!user) { navigation.navigate('Login'); return; }
-    const idx = list.findIndex(s => s.id === track.id);
-    await playTrack(track, list, idx);
+    
+    // Use the massive ~250 item lists for a deep queue
+    let queue = activeFilter !== 'All' ? displaySongs : allTrending;
+    
+    // If the massive queue lacks the selected track (e.g. Listen Again), unshift it
+    if (!queue.find(s => s.id === track.id)) {
+      queue = [...fallbackList, ...queue];
+    }
+    
+    const deduped = uniqueSongs(queue);
+    const idx = deduped.findIndex(s => s.id === track.id);
+    await playTrack(track, deduped, Math.max(0, idx));
     navigation.navigate('Player');
   };
 
   const openOptions = (song: SongItem) => { setSelectedSong(song); setOptionsVisible(true); };
   const openPicker = () => { setOptionsVisible(false); setPickerVisible(true); };
 
+  // Songs to show (filtered or trending)
+  const displaySongs = activeFilter !== 'All' ? filteredSongs : [];
+
+  const renderSection = (title: string, songs: SongItem[], icon?: string, noMargin?: boolean) => {
+    if (!songs || songs.length === 0) return null;
+    return (
+      <View style={[styles.section, noMargin && { marginBottom: 0 }]}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            {icon ? `${icon}  ` : ''}{title}
+          </Text>
+        </View>
+        <FlatList
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          data={songs}
+          keyExtractor={(item, index) => `${title}-${item.id}-${index}`}
+          initialNumToRender={4}
+          maxToRenderPerBatch={4}
+          windowSize={3}
+          renderItem={({ item }) => (
+            <SongCard
+              item={item}
+              onPress={() => handlePlay(item, songs)}
+              onMorePress={() => openOptions(item)}
+            />
+          )}
+        />
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
-      <ScrollView 
-        contentContainerStyle={{ padding: 16, paddingBottom: 130 }} 
+      <ScrollView
+        contentContainerStyle={{ padding: 16, paddingBottom: 65 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
@@ -120,147 +216,168 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Featured Today */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Featured Today</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {isLoading ? 
-              [0, 1, 2].map(i => <SkeletonLoader key={i} width={280} height={200} style={{ marginRight: 14, borderRadius: 22 }} />) :
-              featured.map(item => (
-                <TouchableOpacity 
-                  key={item.id} 
-                  activeOpacity={0.9} 
-                  style={styles.featuredCard}
-                  onPress={() => handlePlay(item, featured)}
-                >
-                  <Image source={{ uri: item.artworkUrl }} style={StyleSheet.absoluteFillObject} />
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.9)']}
-                    style={styles.featuredGradient}
-                  >
-                    <View style={[styles.badge, { backgroundColor: colors.primary }]}>
-                      <Text style={styles.badgeText}>FEATURED</Text>
-                    </View>
-                    <Text style={styles.featuredTitle} numberOfLines={1}>{item.title}</Text>
-                    <Text style={styles.featuredArtist} numberOfLines={1}>{item.artist}</Text>
-                    
-                    <View style={styles.featuredControls}>
-                      <View style={[styles.featuredPlay, { backgroundColor: colors.primary }]}>
-                        <Icon name="musical-notes" size={18} color={getContrastColor(colors.primary)} />
-                      </View>
-                      <TouchableOpacity onPress={e => { e.stopPropagation(); openOptions(item); }}>
-                        <Icon name="ellipsis-horizontal" size={24} color="rgba(255,255,255,0.8)" />
-                      </TouchableOpacity>
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ))
-            }
-          </ScrollView>
-        </View>
-
-        {/* Recently Played */}
-        {recentlyPlayed.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Recently Played</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('RecentlyPlayed')}>
-                <Text style={styles.seeAll}>See All <Icon name="chevron-forward" size={12} /></Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {recentlyPlayed.map((item, idx) => (
-                <SongCard key={`rp-${item.id}-${idx}`} item={item} onPress={() => handlePlay(item, recentlyPlayed)} onMorePress={() => openOptions(item)} />
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {!user && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Recently Played</Text>
-            <GlassCard style={styles.lockedCard}>
-              <Text style={{ fontSize: 32, marginBottom: 8 }}>🔒</Text>
-              <Text style={{ color: colors.textSecondary, marginBottom: 16 }}>Login to see your recently played songs</Text>
-              <TouchableOpacity style={[styles.btnPrimary, { backgroundColor: colors.primary }]} onPress={() => navigation.navigate('Login')}>
-                <Text style={styles.btnPrimaryText}>Login</Text>
-              </TouchableOpacity>
-            </GlassCard>
-          </View>
-        )}
-
-        {/* Genres */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Genres & Moods</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {GENRES.map(g => (
-              <TouchableOpacity 
-                key={g.label} 
-                activeOpacity={0.8} 
-                style={styles.genreCard}
-                onPress={() => {
-                  navigation.navigate('GenreDetail', { category: g.label });
-                }}
+        {/* ── Mood Filter Chips (YouTube Music style) ── */}
+        {/* ── Genres & Moods ── */}
+        <Text style={[styles.sectionTitle, { color: colors.text, marginTop: 10, marginBottom: 12 }]}>Genres & Moods</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterRow}
+          contentContainerStyle={{ paddingBottom: 4 }}
+        >
+          {MOOD_FILTERS.map(f => {
+            const isActive = activeFilter === f.label;
+            const activeTextColor = getContrastColor(colors.primary);
+            return (
+              <TouchableOpacity
+                key={f.label}
+                onPress={() => handleFilterSelect(f.label)}
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: isActive ? colors.primary : colors.surface,
+                    borderColor: isActive ? colors.primary : 'rgba(255,255,255,0.12)',
+                  }
+                ]}
               >
-                <Image source={{ uri: g.image }} style={StyleSheet.absoluteFillObject} />
-                <LinearGradient colors={[`${g.color}DD`, 'transparent']} start={{x:0, y:1}} end={{x:0, y:0}} style={styles.genreOverlay}>
-                  <Text style={styles.genreLabel}>{g.label}</Text>
-                </LinearGradient>
+                <Icon name={f.icon as any} size={14} color={isActive ? activeTextColor : colors.textSecondary} style={{ marginRight: 5 }} />
+                <Text style={[styles.filterChipText, { color: isActive ? activeTextColor : colors.text }]}>
+                  {f.label}
+                </Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+            );
+          })}
+        </ScrollView>
 
-        {/* Top Charts */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Charts</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Search')}>
-              <Text style={styles.seeAll}>See All <Icon name="chevron-forward" size={12} /></Text>
-            </TouchableOpacity>
+        {/* ── Always Visible Top Sections ── */}
+        {featuredNow.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Featured Today</Text>
+            <FlatList 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              data={(isLoading ? [0, 1, 2] : featuredNow) as any}
+              keyExtractor={(item, i) => isLoading ? `feat-skel-${i}` : `feat-${(item as SongItem).id}`}
+              initialNumToRender={2}
+              renderItem={({ item }) => {
+                if (isLoading) return <SkeletonLoader width={280} height={200} style={{ borderRadius: 22, marginRight: 14 }} />;
+                const song = item as SongItem;
+                return (
+                  <TouchableOpacity activeOpacity={0.9} style={styles.featuredCard} onPress={() => handlePlay(song, featuredNow)}>
+                    <Image source={{ uri: song.artworkUrl }} style={StyleSheet.absoluteFillObject} />
+                    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={styles.featuredGradient}>
+                      <View style={[styles.badge, { backgroundColor: colors.primary }]}><Text style={styles.badgeText}>FEATURED</Text></View>
+                      <Text style={styles.featuredTitle} numberOfLines={1}>{song.title}</Text>
+                      <Text style={styles.featuredArtist} numberOfLines={1}>{song.artist}</Text>
+                      <View style={styles.featuredControls}>
+                        <View style={[styles.featuredPlay, { backgroundColor: colors.primary }]}><Icon name="play" size={18} color={getContrastColor(colors.primary)} /></View>
+                        <TouchableOpacity onPress={e => { e.stopPropagation(); openOptions(song); }}><Icon name="ellipsis-horizontal" size={24} color="rgba(255,255,255,0.8)" /></TouchableOpacity>
+                      </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                );
+              }}
+            />
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {isLoading ? Array(4).fill(0).map((_, i) => <SkeletonLoader key={i} width={150} height={200} style={{ marginRight: 14 }} />) :
-              topCharts.map((item) => <SongCard key={item.id} item={item} onPress={() => handlePlay(item, topCharts)} onMorePress={() => openOptions(item)} />)}
-          </ScrollView>
-        </View>
+        )}
 
-        {/* Top Albums */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Albums</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {isLoading ? Array(4).fill(0).map((_, i) => <SkeletonLoader key={i} width={150} height={200} style={{ marginRight: 14 }} />) :
-              topAlbums.map((item) => <SongCard key={item.id} item={item} onPress={() => handlePlay(item, topAlbums)} onMorePress={() => openOptions(item)} />)}
-          </ScrollView>
-        </View>
-        
-        {/* Top Artists */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Artists</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {isLoading ? Array(4).fill(0).map((_, i) => <SkeletonLoader key={i} width={80} height={80} style={{ marginRight: 14, borderRadius: 40 }} />) :
-              topArtists.map((item) => (
-                <TouchableOpacity key={item.id} style={styles.artistCard} onPress={() => handlePlay(item, topArtists)}>
-                  <Image source={{ uri: item.artworkUrl }} style={styles.artistImg} />
-                  <Text style={[styles.artistName, { color: colors.text }]} numberOfLines={1}>{item.artist || item.title}</Text>
-                </TouchableOpacity>
-              ))}
-          </ScrollView>
-        </View>
-
-
-        {/* Trending Now */}
-        {trendingNow.length > 0 && (
+        {listenAgain.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Trending Now</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Search')}>
-                <Text style={styles.seeAll}>See All <Icon name="chevron-forward" size={12} /></Text>
+              <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>Listen Again</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Library', { screen: 'RecentlyPlayed' })}>
+                <Text style={styles.seeAll}>See All <Icon name="chevron-forward" size={12} color="#aaa" /></Text>
               </TouchableOpacity>
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {trendingNow.map((item) => <SongCard key={`trending-${item.id}`} item={item} onPress={() => handlePlay(item, trendingNow)} onMorePress={() => openOptions(item)} />)}
-            </ScrollView>
+            <FlatList 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              data={listenAgain}
+              keyExtractor={item => `listen-${item.id}`}
+              initialNumToRender={4}
+              renderItem={({ item }) => (
+                <SongCard item={item} onPress={() => handlePlay(item, listenAgain)} onMorePress={() => openOptions(item)} />
+              )}
+            />
+          </View>
+        )}
+
+        {/* Mood-filtered full page content */}
+        {activeFilter !== 'All' ? (
+          <View>
+            {filterLoading ? (
+              <View>
+                {renderSection(`Top Charts`, [])}
+                {renderSection(`Trending Now`, [])}
+              </View>
+            ) : displaySongs.length > 0 ? (
+              <View>
+                {renderSection(`Top ${activeFilter} Picks`, displaySongs.slice(0, 25))}
+                {renderSection(`Top Charts`, displaySongs.slice(25, 50))}
+                {renderSection(`Top Albums`, displaySongs.slice(50, 75))}
+                {renderSection(`Trending Now`, displaySongs.slice(75, 100))}
+                {renderSection(`New ${activeFilter}`, displaySongs.slice(100, 125))}
+                {renderSection(`Best of ${activeFilter}`, displaySongs.slice(125, 150))}
+                {renderSection(`More ${activeFilter}`, displaySongs.slice(150, 250))}
+              </View>
+            ) : (
+              <Text style={{ color: colors.textSecondary, marginTop: 12 }}>No songs found for "{activeFilter}"</Text>
+            )}
+          </View>
+        ) : (
+          <View>
+            {/* ── Default Home Content ── */}
+            {/* ── Quick Picks ── */}
+            {isLoading
+              ? renderSection('Quick Picks', [])
+              : renderSection('Quick Picks', quickPicks)}
+            {isLoading && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Picks</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {[0,1,2,3].map(i => <SkeletonLoader key={i} width={150} height={200} style={{ marginRight: 14 }} />)}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* ── Fresh Finds ── */}
+            {renderSection('Fresh Finds', freshFinds)}
+
+            {/* ── New Releases ── */}
+            {renderSection('New Releases', newReleases)}
+
+            {/* ── Old Favourites ── */}
+            {renderSection('Old Favourites', oldFavourites)}
+
+            {renderSection('Top Charts', topCharts)}
+            {renderSection('Top Albums', topAlbums)}
+
+            {/* ── Top Artists ── */}
+            {topArtists.length > 0 && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Top Artists</Text>
+                <FlatList
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  data={(isLoading ? [0,1,2,3] : topArtists) as any}
+                  keyExtractor={(item, i) => isLoading ? `top-skel-${i}` : `artist-${(item as SongItem).artist}`}
+                  initialNumToRender={5}
+                  renderItem={({ item }) => {
+                    if (isLoading) return <SkeletonLoader width={80} height={80} style={{ marginRight: 14, borderRadius: 40 }} />;
+                    const artist = item as SongItem;
+                    return (
+                      <TouchableOpacity style={styles.artistCard} onPress={() => handlePlay(artist, topArtists)}>
+                        <Image source={{ uri: artist.artworkUrl }} style={styles.artistImg} />
+                        <Text style={[styles.artistName, { color: colors.text }]} numberOfLines={1}>{artist.artist || artist.title}</Text>
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
+              </View>
+            )}
+
+            {renderSection(`Trending Now (${allTrending.length})`, trendingSongs, undefined, true)}
+
           </View>
         )}
 
@@ -283,11 +400,11 @@ export default function HomeScreen() {
               {LANGUAGES.map(lang => {
                 const isSelected = preferences?.languages?.includes(lang);
                 return (
-                  <TouchableOpacity 
-                    key={lang} 
+                  <TouchableOpacity
+                    key={lang}
                     style={[
-                      styles.langChip, 
-                      { 
+                      styles.langChip,
+                      {
                         backgroundColor: isSelected ? colors.primary : colors.surfaceHighlight,
                         borderColor: isSelected ? colors.primary : 'transparent'
                       }
@@ -303,7 +420,7 @@ export default function HomeScreen() {
                 );
               })}
             </View>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.btnFull, { backgroundColor: colors.primary }]}
               onPress={() => setLangModalVisible(false)}
             >
@@ -317,239 +434,57 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  header: {
+  container: { flex: 1, backgroundColor: 'transparent' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, marginTop: 40 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center' },
+  logoIcon: { width: 44, height: 44, borderRadius: 14, borderWidth: 1, justifyContent: 'center', alignItems: 'center', marginRight: 10 },
+  greeting: { fontSize: 12, fontWeight: '600' },
+  brand: { fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
+  headerRight: { flexDirection: 'row' },
+  iconBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.05)', justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
+
+  // Filter chips
+  filterRow: { marginBottom: 20 },
+  filterChip: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
-    marginTop: 40,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  logoIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
     borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
+    marginRight: 8,
   },
-  greeting: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  brand: {
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-  },
-  headerRight: {
-    flexDirection: 'row',
-  },
-  iconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  section: {
-    marginBottom: 28,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 14,
-  },
-  seeAll: {
-    color: '#aaa',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  featuredCard: {
-    width: 280,
-    height: 200,
-    borderRadius: 22,
-    overflow: 'hidden',
-    marginRight: 14,
-  },
-  featuredGradient: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 16,
-    paddingTop: 40,
-  },
-  badge: {
-    position: 'absolute',
-    top: -100, // Roughly place it at the top
-    right: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  }, // We will use absolute placement inside the card instead
-  badgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
-  featuredTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  featuredArtist: {
-    color: 'rgba(255,255,255,0.8)',
-    fontSize: 13,
-    marginBottom: 12,
-  },
-  featuredControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  featuredPlay: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  lockedCard: {
-    padding: 24,
-    alignItems: 'center',
-    borderRadius: 16,
-  },
-  btnPrimary: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  btnPrimaryText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  genreCard: {
-    width: 130,
-    height: 90,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginRight: 14,
-  },
-  genreOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
-    padding: 10,
-  },
-  genreLabel: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  artistCard: {
-    width: 90,
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  artistImg: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginBottom: 8,
-  },
-  artistName: {
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  actionRow: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 32, gap: 16 },
-  actionBtnContainer: { flex: 1 },
-  actionBtn: { 
-    alignItems: 'center', 
-    justifyContent: 'center',
-    padding: 20, 
-    borderRadius: 24,
-    height: 110,
-  },
-  actionBtnText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  actionIconOuter: { 
-    width: 44, 
-    height: 44, 
-    borderRadius: 14, 
-    backgroundColor: 'rgba(255,255,255,0.2)', 
-    justifyContent: 'center', 
-    alignItems: 'center',
-    marginRight: 12
-  },
-  actionTitle: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  actionSubtitle: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600' },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    padding: 24,
-    paddingBottom: 48,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  modalHeaderTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-  },
-  langGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginBottom: 32,
-  },
-  langChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  langText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  btnFull: {
-    height: 56,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  btnFullText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
+  filterChipText: { fontSize: 13, fontWeight: '700' },
+
+  section: { marginBottom: 28 },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  sectionTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 14 },
+  seeAll: { color: '#aaa', fontSize: 13, fontWeight: '600' },
+
+  featuredCard: { width: 280, height: 200, borderRadius: 22, overflow: 'hidden', marginRight: 14 },
+  featuredGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, paddingTop: 40 },
+  badge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginBottom: 6 },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold', letterSpacing: 1 },
+  featuredTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
+  featuredArtist: { color: 'rgba(255,255,255,0.8)', fontSize: 13, marginBottom: 12 },
+  featuredControls: { flexDirection: 'row', alignItems: 'center' },
+  featuredPlay: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+
+  lockedCard: { padding: 24, alignItems: 'center', borderRadius: 16 },
+  btnPrimary: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  btnPrimaryText: { color: '#fff', fontWeight: 'bold' },
+
+  artistCard: { width: 90, alignItems: 'center', marginRight: 14 },
+  artistImg: { width: 80, height: 80, borderRadius: 40, marginBottom: 8 },
+  artistName: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 24, paddingBottom: 48 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+  modalHeaderTitle: { fontSize: 20, fontWeight: '900' },
+  langGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 32 },
+  langChip: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, borderWidth: 1 },
+  langText: { fontSize: 14, fontWeight: '600' },
+  btnFull: { height: 56, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  btnFullText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
 });

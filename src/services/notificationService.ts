@@ -54,6 +54,7 @@ const scheduleFestivalNotification = async (title: string, body: string, date: D
         channelId,
         smallIcon: APP_ICON,
         largeIcon: APP_ICON,
+        color: '#ec4899',
         pressAction: { id: 'default' },
       },
     },
@@ -84,6 +85,7 @@ const scheduleNotification = async (title: string, body: string, hour: number, m
         channelId,
         smallIcon: APP_ICON,
         largeIcon: APP_ICON,      // App icon shown prominently in notification
+        color: '#ec4899',
         pressAction: { id: 'default' },
       },
     },
